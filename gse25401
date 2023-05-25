@@ -1,0 +1,57 @@
+rm(list=ls())
+options(stringsAsFactors=F)
+library(org.Mm.eg.db)
+#step1
+sample <- read.table("D:/chanre/GSE25401/sample_gse25401.csv",header = TRUE,sep=",")
+data <- read.table("D:/chanre/GSE25401/GSE25401_series_matrix.csv",header = TRUE,sep=",")
+data = data[-33298,]
+geneid <- read.table("D:/chanre/GSE25401/geneid.csv",header = TRUE,sep=",")
+names(geneid) <- c("ID","symbol")#gene.symbol修改列名
+data$ID<- data[,1]#将ID添加到data表达矩阵的新的一列
+data <- merge(data,geneid,by='ID')#merge（）函数将data的Id与gene.symbol相匹配
+library(limma)
+data <- avereps(data[,-c(1,2,59)],ID=data$symbol)#删除第1列和第14列，并将行名改为基因名，然后取平均值
+data <- as.data.frame(data)#把data变成数据框
+#step2
+#分组
+#分组信息在GSE13432_series_matrix文件中
+#分组
+
+group_list <- factor(c(rep('obese',30),rep('nonobese',26)))
+table(group_list)
+
+design <- model.matrix(~0+group_list)#创建一个分组的矩阵
+colnames(design)=levels(group_list)
+obese <- sample[grep("WAT_Obese",sample[,1]),]
+nonobese <- sample[grep("WAT_Nonobese",sample[,1]),]
+sample <- rbind(obese,nonobese)
+loc = match(sample[,2],colnames(data))
+data = data[,loc]
+rownames(design)=colnames(data)
+head(design)
+
+#创建差异比较矩阵
+contrast.matrix1<-makeContrasts("obese-nonobese",levels=design)
+
+##step1，lmFit为每一个基因给定一系列的阵列来拟合线性模型
+fit <- lmFit(data,design)
+##step2，eBayes给出了一个微阵列线性模型拟合，通过贝叶斯调整误差到一个共同的值来计算修正后的t统计量、修正后的f统计量和微分表达式的对数概率。
+fit2 <- contrasts.fit(fit, contrast.matrix1)
+fit2 <- eBayes(fit2)  
+##step3，toptable从线性模型拟合中提取出排名靠前的基因表
+options(digits = 4)#设置全局的数字有效位数为4
+tempOutput1 <- topTable(fit2, coef=1, n=Inf)
+tempOutput1 <- na.omit(tempOutput1) #移除NA值
+head(tempOutput1)
+
+w1 <- tempOutput1[which(tempOutput1$adj.P.Val<0.05  & abs(tempOutput1$logFC) >= log2(1.5)),]
+w1.up <- w1[(w1$adj.P.Val < 0.05 & w1$logFC > 1.5),]
+w1.down <- w1[(w1$adj.P.Val < 0.05 & w1$logFC < -1.5),]
+write.table(w1.up,"D:/chanre/GSE25401/limmaw1.up.txt",quote=F,sep="");
+write.table(w1.down,"D:/chanre/GSE25401/limmaw1.down.txt",quote=F,sep="")
+
+write.table(w1,"D:/chanre/GSE25401/limmaw1.txt",quote=F,sep="");
+
+
+library(gplots);
+venn(list(COLD1w=rownames(w1),COLD5w=rownames(w2)))
